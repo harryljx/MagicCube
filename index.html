@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>魔方</title>
+  <script src="js/Three.js"></script>
+  <script src="js/TrackballControls_forMagicCube.js"></script><!-- touch 事件下的event.preventDefault() 被注释了-->
+  <script src="js/Projector.js"></script>
+  <style type="text/css">
+  #WebGL-output{
+  }
+  </style>
+</head>
+<body ontouchmove="event.preventDefault()"><!-- 禁止body滑动事件 -->
+<div id="WebGL-output"></div>
+</body>
+<script>
+/*******************************************定义小方块***************************************************/
+    let materials = [];
+    let pic=['/material/magicCube/blue.png'//左
+        ,'/material/magicCube/white.png'//右
+        ,'/material/magicCube/red.png'//上
+        ,'/material/magicCube/orange.png'//下
+        ,'/material/magicCube/green.png'//前
+        ,'/material/magicCube/yellow.png'];//后
+
+    for (let i = 0; i < 6; ++i) {
+        var a = new THREE.MeshLambertMaterial({overdraw: true});
+        a.map = new THREE.ImageUtils.loadTexture(pic[i]);
+        materials.push(a);
+    }
+    let cubeGeometry = new THREE.CubeGeometry(4,4,4);
+    let cubeMaterials = new THREE.MultiMaterial(materials);
+    
+
+    class Cube{
+        constructor(obj){
+            this.obj = new THREE.Mesh(cubeGeometry,cubeMaterials);
+            this.position = {"x":0,"y":0,"z":0};
+        }
+        //移动
+        setPosition(x,y,z){
+            this.obj.position.set(x,y,z);
+            this.position = {"x":x,"y":y,"z":z};
+        }
+        //绕世界向量旋转
+        setRotation(axis, radians){
+            let rotWorldMatrix;
+
+            let x = this.obj.position.x;
+            let y = this.obj.position.y;
+            let z = this.obj.position.z;
+            let LYZ = Math.sqrt( y*y + z*z);
+            let LXZ = Math.sqrt( x*x + z*z);
+            let LXY = Math.sqrt( x*x + y*y);
+            //空间轴
+            let xAxis = new THREE.Vector3(1,0,0);
+            let yAxis = new THREE.Vector3(0,1,0);
+            let zAxis = new THREE.Vector3(0,0,1);
+
+            // 空间坐标变动
+            if (LYZ != 0 && axis.x!=0){
+                let cosYZ = y/LYZ;
+                let sinYZ = z/LYZ;
+                let thetaYZ = Math.acos(cosYZ);
+                if (sinYZ < 0){
+                    thetaYZ =- thetaYZ
+                }
+                thetaYZ +=  radians;
+                y = Math.cos(thetaYZ)*LYZ;
+                z = Math.sin(thetaYZ)*LYZ;                                     
+            }
+            if (LXZ != 0 && axis.y!=0){
+               let cosXZ = z/LXZ;
+                let sinXZ = x/LXZ;
+                let thetaXZ = Math.acos(cosXZ);
+                if (sinXZ < 0){
+                    thetaXZ =- thetaXZ
+                }
+                thetaXZ +=  radians;
+                x = Math.sin(thetaXZ)*LXZ;
+                z = Math.cos(thetaXZ)*LXZ;                                   
+            }
+            if (LXY != 0 && axis.z!=0){
+                let cosXY = x/LXY;
+                let sinXY = y/LXY;
+                let thetaXY = Math.acos(cosXY);
+                if (sinXY < 0){
+                    thetaXY =- thetaXY
+                }
+                thetaXY += radians;
+                x = Math.cos(thetaXY)*LXY;
+                y = Math.sin(thetaXY)*LXY;                                     
+            }                               
+            this.setPosition(x,y,z);
+            //绕自轴旋转
+            rotateAroundWorldAxis(this.obj,axis,radians);
+            function rotateAroundWorldAxis(object, axis, radians) {
+                rotWorldMatrix = new THREE.Matrix4();
+                rotWorldMatrix.makeRotationAxis(axis.normalize(), radians);
+                rotWorldMatrix.multiply(object.matrix);                // pre-multiply
+                object.matrix = rotWorldMatrix;
+                object.rotation.setFromRotationMatrix(object.matrix);
+            }
+        }
+    }
+    /*****************************************定义魔方**************************************************/
+    class MagicCube{
+        constructor(){
+            this.cubes = [];                     //方块
+            this.cubeObjs = [];                  //方块的3d对象
+            this.rotatingCubes = [];             //转动方块
+            this.timer;                          //定时器
+            this.actList = [];                   //动作列表
+            this.acting = false;                 //动作标志位
+            //生成魔方
+            for (let i = 0; i < 3; i++){
+                for (let m = 0; m < 3; m++){
+                   for (let n = 0; n < 3; n++){
+                        let newCube = new Cube();
+                        scene.add(newCube.obj);
+                        newCube.setPosition(i*4-4,m*4-4,n*4-4);
+                        this.cubes.push(newCube);
+                        this.cubeObjs.push(newCube.obj);
+                   }
+                }
+            }
+        }
+        //旋转一面
+        rotate(center,axis,radians){
+            let _this = this;
+            let count = 0; //定时器用计数器
+            let t = 20;    //转动时间
+
+            this.rotatingCubes = [];
+            this.acting = true;
+            //确定旋转面，旋转轴
+            if (axis.x != 0){
+                if (axis.x < 0){
+                    axis.x = -axis.x;
+                }
+                for (let i = 0; i < this.cubes.length; i++){
+                    if (approximatelyEqual(this.cubes[i].position.x,center.x)){
+                        this.rotatingCubes.push(this.cubes[i]);
+                    }
+                }
+            }if (axis.y != 0){
+                if (axis.y < 0){
+                    axis.y = -axis.y;
+                }
+                for (let i = 0; i < this.cubes.length; i++){
+                    if (approximatelyEqual(this.cubes[i].position.y,center.y)){
+                        this.rotatingCubes.push(this.cubes[i]);
+                    }
+                }
+            }
+            if (axis.z != 0){
+                if (axis.z < 0){
+                    axis.z = -axis.z;
+                }
+                for (let i = 0; i < this.cubes.length; i++){
+                    if (approximatelyEqual(this.cubes[i].position.z,center.z)){
+                        this.rotatingCubes.push(this.cubes[i]);
+                    }
+                }
+            }       
+            //旋转
+            let deltaRadians = radians/t;
+            this.timer = self.setInterval(function(){
+                for (let i = 0; i < _this.rotatingCubes.length; i++){
+
+                    _this.rotatingCubes[i].setRotation(axis,deltaRadians);
+                }
+                if (count == (t -1)){
+                    _this.rotateEnd();
+                    clearInterval(_this.timer);
+                }
+                count++;
+            },16.67)   
+            //约等于
+            function approximatelyEqual(a,b){ 
+                let c =a-b;
+                if (c < 0.02 && c > -0.02){
+                    return true;
+                }else{
+                    return false;
+                }
+            };                
+        }
+        rotateEnd(){
+            for (let i =0; i< this.rotatingCubes.length; i++){
+                let x = this.rotatingCubes[i].position.x ;
+                if (x > 0){
+                    x += .2;
+                }else{
+                    x -=.2
+                }
+                let y = this.rotatingCubes[i].position.y ;
+                if (y > 0){
+                    y += .2;
+                }else{
+                    y -=.2
+                }
+                let z = this.rotatingCubes[i].position.z ;
+                if (z > 0){
+                    z += .2;
+                }else{
+                    z -=.2
+                }
+                x = parseInt(x);
+                y = parseInt(y);
+                z = parseInt(z);
+                this.rotatingCubes[i].setPosition(x,y,z);
+            }
+            this.acting = false;
+        }
+        //按动作队列执行
+        act(){
+            let _this = this;
+            let i = 0;
+            let actList = this.actList;
+            let timer;
+            doAct(0);
+            function doAct(i){
+                if (i < actList.length){
+                    _this.rotate(actList[i].center,actList[i].axis,actList[i].radians);
+
+                    //定时检查，执行中的动作是否完成
+                    timer = setInterval(function(){
+                        if (i<=actList.length-1&&!_this.acting){
+                            //清楚定时检查，并执行下个动作
+                            clearInterval(timer);
+                            doAct(i+1);
+                        }
+                    },16.67)
+                }else{
+                    clearInterval(timer);
+                }
+            }
+        }
+        //动作队列入栈
+        pushActList(act){
+            this.actList.push(act);
+        }
+    }
+    
+/**********************************************************初始化场景**************************************************************/
+    //init scene
+    let scene = new THREE.Scene();
+    //init camaea
+    let camera = new THREE.PerspectiveCamera(45
+        ,window.innerWidth/window.innerHeight
+        ,0.1,1000);
+    //init renderer
+    let renderer = new THREE.WebGLRenderer({antialias: true});
+    renderer.setClearColor(0xEEEEEE);
+    renderer.setSize(window.innerWidth,window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    
+    //initlight
+    light = new THREE.AmbientLight(0x333333);
+    scene.add(light);
+    let spotLight = new THREE.SpotLight( 0xffffff );
+    spotLight.position.set( 40, 60, 40);
+    /*spotLight.castShadow = true;
+    spotLight.shadow.mapSize.height = 2048;//提高产生阴影的分辨率 
+    spotLight.shadow.mapSize.width = 2048;*/
+    let spotLight1 = new THREE.SpotLight( 0xffffff );
+    spotLight1.position.set( -40, -60, -40);
+    scene.add(spotLight);
+    scene.add(spotLight1);
+
+    let controls = new THREE.TrackballControls( camera );
+
+    //let axes = new THREE.AxisHelper( 20 );//坐标轴
+    //scene.add( axes );
+
+    let auxiliaryCube = new THREE.Mesh(new THREE.CubeGeometry(12,12,12),new THREE.MeshBasicMaterial({transparent:true,opacity:0}))
+    scene.add(auxiliaryCube);//透明正方体，用于事件判断
+
+    camera.position.x = 30
+    camera.position.y = 30;
+    camera.position.z = 30;
+    camera.lookAt(scene.position);
+
+    let newMagicCube = new MagicCube(); 
+    let objDown;
+    let objUp;
+/*****************************************************事件初始化*********************************************************/
+    let projector = new THREE.Projector();
+    window.document.addEventListener("touchstart",onTouchStart,false);
+
+    function onTouchStart(event){
+        let mouse = new Object();
+        mouse.x = (event.touches[0].clientX / window.innerWidth ) * 2 - 1;
+        mouse.y = -(event.touches[0].clientY / window.innerHeight) * 2 + 1;
+
+        let raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse,camera);
+
+        let intersects = raycaster.intersectObjects(newMagicCube.cubeObjs);
+        if (intersects.length && !newMagicCube.acting){
+            controls.enabled = false;
+            objDown = intersects[0].object;
+            let x = objDown.position.x;
+            let y = objDown.position.y;
+            let z = objDown.position.z;
+            let LYZ = Math.sqrt( y*y + z*z);
+            let LXZ = Math.sqrt( x*x + z*z);
+            let LXY = Math.sqrt( x*x + y*y);
+            let thetaYZ;
+            let thetaXZ;
+            let thetaXY;
+                
+            if (LYZ != 0){
+                let cosYZ = y/LYZ;
+                let sinYZ = z/LYZ;
+                thetaYZ = Math.acos(cosYZ);
+                if (sinYZ < 0){
+                    thetaYZ =- thetaYZ
+                }                                
+            }
+            if (LXZ != 0){
+                let cosXZ = z/LXZ;
+                let sinXZ = x/LXZ;
+                thetaXZ = Math.acos(cosXZ);
+                if (sinXZ < 0){
+                    thetaXZ =- thetaXZ
+                }                            
+            }
+            if (LXY != 0 ){
+                let cosXY = x/LXY;
+                let sinXY = y/LXY;
+                thetaXY = Math.acos(cosXY);
+                if (sinXY < 0){
+                    thetaXY =- thetaXY
+                }                                     
+            }  
+            objDown.angle = {thetaYZ,thetaXZ,thetaXY};
+            //console.log(objDown)     
+            window.document.addEventListener("touchend",onTouchEnd,false);
+        }
+    }
+    function onTouchEnd(event){
+        //event.preventDefault();
+        controls.enabled = true;
+        let mouse = new Object();
+        let delta = new Object();
+        mouse.x = (event.changedTouches[0].clientX / window.innerWidth ) * 2 - 1;
+        mouse.y = -(event.changedTouches[0].clientY / window.innerHeight) * 2 + 1;
+
+        let raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse,camera);
+        let intersects = raycaster.intersectObjects(newMagicCube.cubeObjs);
+
+        let aCube = raycaster.intersectObject(auxiliaryCube)[0];
+        if (intersects.length && !newMagicCube.acting){
+            objUp = intersects[0].object;
+            let x = objUp.position.x;
+            let y = objUp.position.y;
+            let z = objUp.position.z;
+            let LYZ = Math.sqrt( y*y + z*z);
+            let LXZ = Math.sqrt( x*x + z*z);
+            let LXY = Math.sqrt( x*x + y*y);;
+            let thetaYZ;
+            let thetaXZ;
+            let thetaXY;
+                
+            if (LYZ != 0){
+                let cosYZ = y/LYZ;
+                let sinYZ = z/LYZ;
+                thetaYZ = Math.acos(cosYZ);
+                if (sinYZ < 0){
+                    thetaYZ =- thetaYZ
+                }                                
+            }
+            if (LXZ != 0){
+                let cosXZ = z/LXZ;
+                let sinXZ = x/LXZ;
+                thetaXZ = Math.acos(cosXZ);
+                if (sinXZ < 0){
+                    thetaXZ =- thetaXZ
+                }                            
+            }
+            if (LXY != 0 ){
+                let cosXY = x/LXY;
+                let sinXY = y/LXY;
+                thetaXY = Math.acos(cosXY);
+                if (sinXY < 0){
+                    thetaXY =- thetaXY
+                }                                     
+            }  
+            objUp.angle = {thetaYZ,thetaXZ,thetaXY}
+            delta.thetaYZ = objUp.angle.thetaYZ - objDown.angle.thetaYZ;
+            delta.thetaXZ = objUp.angle.thetaXZ - objDown.angle.thetaXZ;
+            delta.thetaXY = objUp.angle.thetaXY - objDown.angle.thetaXY;
+
+            objUp.normal = aCube.face.normal;
+            delta.x = objUp.position.x - objDown.position.x;
+            delta.y = objUp.position.y - objDown.position.y;
+            delta.z = objUp.position.z - objDown.position.z;
+
+            let center = {x:0,y:0,z:0};
+            let axis = new THREE.Vector3(0,0,0);
+            let radians= Math.PI/2;
+            let maxD;
+
+            if (objUp.normal.x){ 
+                if (delta.y){
+                    center.z = objUp.position.z;
+                    axis.z = 1;
+                    radians = radians * delta.thetaXY / Math.abs(delta.thetaXY) * objUp.normal.x / Math.abs(objUp.normal.x);
+                }else if (delta.z){
+                    center.y = objUp.position.y;
+                    axis.y = 1;
+                    radians = radians * delta.thetaXZ / Math.abs(delta.thetaXZ);
+                }   
+            }else if(objUp.normal.y){
+                if (delta.x){
+                    center.z = objUp.position.z;
+                    axis.z = 1;
+                    radians = radians * delta.thetaXY / Math.abs(delta.thetaXY);
+                }else if (delta.z){
+                    center.x = objUp.position.x;
+                    axis.x = 1;
+                    radians = radians * delta.thetaYZ / Math.abs(delta.thetaYZ) * objUp.normal.y / Math.abs(objUp.normal.y);
+                }
+            }else if(objUp.normal.z){
+                if (delta.x){
+                    center.y = objUp.position.y;
+                    axis.y = 1;
+                    radians = radians * delta.thetaXZ / Math.abs(delta.thetaXZ) * objUp.normal.z / Math.abs(objUp.normal.z);
+                }else if (delta.y){
+                    center.x = objUp.position.x;
+                    axis.x = 1;
+                    radians = radians * delta.thetaYZ / Math.abs(delta.thetaYZ);
+                }
+            }
+            if (!newMagicCube.acting){
+                newMagicCube.actList = [];
+                newMagicCube.pushActList({center:center,axis:axis,radians:radians});
+                newMagicCube.act();
+            }
+                
+            function compareToZero(a,b){
+                if (a != 0){
+                    return a;
+                }else{
+                    return b;
+                }
+            }
+        } 
+    }
+    
+/*********************************************************渲染场景********************************************************/
+    let WebGLCOntainer = document.getElementById("WebGL-output");
+    WebGLCOntainer.appendChild(renderer.domElement);
+
+    renderScene();
+    function renderScene() {
+        requestAnimationFrame( renderScene );
+        controls.update(); 
+        renderer.render(scene, camera);        
+    }
+</script>
+</html>
