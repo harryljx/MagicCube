@@ -288,15 +288,15 @@
     let newMagicCube = new MagicCube(); 
     let objDown;
     let objUp;
-/*****************************************************事件初始化*********************************************************/
-    let projector = new THREE.Projector();
-    window.document.addEventListener("touchstart",onTouchStart,false);
+/*****************************************************   事件 *********************************************************/
 
+    window.document.addEventListener("touchstart",onTouchStart,false);
+    
     function onTouchStart(event){
         let mouse = new Object();
         mouse.x = (event.touches[0].clientX / window.innerWidth ) * 2 - 1;
         mouse.y = -(event.touches[0].clientY / window.innerHeight) * 2 + 1;
-
+      
         let raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(mouse,camera);
 
@@ -338,8 +338,7 @@
                     thetaXY =- thetaXY
                 }                                     
             }  
-            objDown.angle = {thetaYZ,thetaXZ,thetaXY};
-            //console.log(objDown)     
+            objDown.angle = {thetaYZ,thetaXZ,thetaXY};    
             window.document.addEventListener("touchend",onTouchEnd,false);
         }
     }
